@@ -1,0 +1,26 @@
+{
+  "name": "yunyun-lootrun",
+  "version": "0.1.0",
+  "description": "Self-hosted manual next-move advisor for Wynncraft lootruns.",
+  "private": false,
+  "author": "YunYun",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test:engine": "node app/lootrun/engine.test.mjs"
+  },
+  "dependencies": {
+    "next": "16.2.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "^4"
+  }
+}
