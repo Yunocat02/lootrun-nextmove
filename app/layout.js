@@ -1,4 +1,5 @@
 import "./globals.css";
+import SiteNav from "./components/SiteNav";
 
 export const metadata = {
   title: "YunYun Lootrun Advisor",
@@ -25,7 +26,10 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <SiteNav />
+        {children}
+      </body>
     </html>
   );
 }
