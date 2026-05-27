@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const MARKET_SEARCH_STORAGE_KEY = "yunyun-market-search-state";
+const MARKET_SEARCH_STORAGE_KEY = "yunyun-market-search-state-v2";
 
 const RARITIES = ["Normal", "Unique", "Rare", "Legendary", "Fabled", "Mythic", "Set"];
 const ITEM_TYPES = [
@@ -41,32 +41,7 @@ const LOCAL_SORTS = [
   ["price_asc", "Price low"],
   ["price_desc", "Price high"],
   ["overall_desc", "Roll high"],
-  ["weighted_desc", "Weighted high"],
-  ["matched_desc", "Matched groups"],
-];
-const GROUP_OPERATORS = [
-  ["and", "And"],
-  ["or", "Or"],
-  ["not", "Not"],
-  ["if", "If"],
-  ["count", "Count"],
-  ["weighted", "Weighted Sum"],
-];
-const RULE_TARGETS = [
-  ["stat", "Stat roll"],
-  ["overall_roll", "Overall roll"],
-  ["listing_price", "Listing price"],
-  ["amount", "Amount"],
-  ["reroll_count", "Reroll count"],
-  ["tier", "Tier"],
-];
-const COMPARATORS = [
-  ["range", "Min / Max"],
-  ["gte", ">="],
-  ["lte", "<="],
-  ["eq", "="],
-  ["exists", "Exists"],
-  ["missing", "Missing"],
+  ["weighted_desc", "Sum high"],
 ];
 const COMMON_STATS = [
   "strength",
@@ -95,11 +70,13 @@ const DEFAULT_QUERY = {
   shiny: "",
   unidentified: "",
   tier: "",
+  priceMin: "",
+  priceMax: "",
   itemType: "",
   subType: "",
   sort: "timestamp_desc",
   page: "1",
-  pageSize: "100",
+  pageSize: "1000",
 };
 
 let nextId = 0;
@@ -111,13 +88,10 @@ function makeClientId(prefix) {
 
 function createRule(overrides = {}) {
   return {
-    comparator: "range",
-    enabled: true,
     id: overrides.id ?? makeClientId("rule"),
     max: "",
     min: "",
     stat: "",
-    target: "stat",
     weight: "1",
     ...overrides,
   };
@@ -127,40 +101,20 @@ function createGroup(overrides = {}) {
   return {
     enabled: true,
     id: overrides.id ?? makeClientId("group"),
-    maxCount: "",
-    maxTotal: "",
-    minCount: "1",
-    minTotal: "",
-    operator: "and",
+    operator: "weighted",
     rows: [createRule()],
     ...overrides,
   };
 }
 
 function createInitialGroups() {
-  return [
-    {
-      enabled: true,
-      id: "starter-roll-group",
-      maxCount: "",
-      maxTotal: "",
-      minCount: "1",
-      minTotal: "",
-      operator: "and",
-      rows: [
-        createRule({
-          id: "starter-overall-roll",
-          min: "70",
-          target: "overall_roll",
-        }),
-      ],
-    },
-  ];
+  return [];
 }
 
 export default function MarketBoard() {
   const [query, setQuery] = useState(DEFAULT_QUERY);
   const [groups, setGroups] = useState(createInitialGroups);
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
   const [localSort, setLocalSort] = useState("api");
   const [items, setItems] = useState([]);
   const [serverMeta, setServerMeta] = useState(null);
@@ -217,6 +171,7 @@ export default function MarketBoard() {
 
   const evaluatedItems = useMemo(() => {
     const rows = items
+      .filter((item) => passesLocalPriceFilter(item, query))
       .map((item) => ({
         item,
         meta: evaluateAllGroups(item, groups),
@@ -224,7 +179,7 @@ export default function MarketBoard() {
       .filter((entry) => entry.meta.passed);
 
     return sortEvaluatedItems(rows, localSort).map((entry) => entry.item);
-  }, [groups, items, localSort]);
+  }, [groups, items, localSort, query]);
 
   const selectedItem = useMemo(() => {
     if (!evaluatedItems.length) {
@@ -332,8 +287,10 @@ export default function MarketBoard() {
     setQuery((previous) => ({ ...previous, [key]: value }));
   }
 
-  function addGroup(operator = "and") {
-    setGroups((previous) => [...previous, createGroup({ operator })]);
+  function addGroup() {
+    setGroups((previous) => [...previous, createGroup()]);
+    setGroupPickerOpen(false);
+    setLocalSort("weighted_desc");
   }
 
   function updateGroup(groupId, patch) {
@@ -499,6 +456,28 @@ export default function MarketBoard() {
                 />
               </label>
               <label className="field-label">
+                Price min
+                <input
+                  inputMode="numeric"
+                  min="0"
+                  placeholder="emeralds"
+                  type="number"
+                  value={query.priceMin}
+                  onChange={(event) => updateQuery("priceMin", event.target.value)}
+                />
+              </label>
+              <label className="field-label">
+                Price max
+                <input
+                  inputMode="numeric"
+                  min="0"
+                  placeholder="10000"
+                  type="number"
+                  value={query.priceMax}
+                  onChange={(event) => updateQuery("priceMax", event.target.value)}
+                />
+              </label>
+              <label className="field-label">
                 API sort
                 <select
                   value={query.sort}
@@ -555,18 +534,35 @@ export default function MarketBoard() {
                 <p className="eyebrow">Stat filters</p>
                 <h2>Advanced Groups</h2>
               </div>
-              <button className="tool-button" type="button" onClick={() => addGroup()}>
-                + Group
-              </button>
+              <div className="heading-actions">
+                <button
+                  className="tool-button"
+                  type="button"
+                  onClick={() => setGroupPickerOpen((open) => !open)}
+                >
+                  + Group
+                </button>
+              </div>
             </div>
+            {groupPickerOpen ? (
+              <div className="group-picker">
+                <button className="group-type-option" type="button" onClick={addGroup}>
+                  <strong>Weighted Sum</strong>
+                  <span>Sum selected stat roll percentages with custom weights.</span>
+                </button>
+              </div>
+            ) : null}
             <datalist id="market-stat-names">
               {statNames.map((stat) => (
                 <option key={stat} value={stat} />
               ))}
             </datalist>
             <div className="filter-groups">
+              {groups.length === 0 ? (
+                <div className="empty-state">Add a group, then choose Weighted Sum.</div>
+              ) : null}
               {groups.map((group, index) => (
-                <FilterGroup
+                <WeightedSumGroup
                   group={group}
                   index={index}
                   key={group.id}
@@ -646,7 +642,7 @@ export default function MarketBoard() {
   );
 }
 
-function FilterGroup({
+function WeightedSumGroup({
   group,
   index,
   onAddRule,
@@ -655,70 +651,25 @@ function FilterGroup({
   onUpdateGroup,
   onUpdateRule,
 }) {
-  const isCount = group.operator === "count";
-  const isWeighted = group.operator === "weighted";
-
   return (
     <section className={group.enabled ? "filter-group" : "filter-group disabled"}>
-      <div className="filter-group-head">
-        <label className="check-label">
+      <div className="filter-group-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <input
             checked={group.enabled}
             type="checkbox"
+            style={{ width: "14px", height: "14px", margin: 0, cursor: "pointer" }}
             onChange={(event) => onUpdateGroup({ enabled: event.target.checked })}
           />
-          #{index + 1}
-        </label>
-        <select
-          value={group.operator}
-          onChange={(event) => onUpdateGroup({ operator: event.target.value })}
-        >
-          {GROUP_OPERATORS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-        {isCount ? (
-          <div className="filter-inline-fields">
-            <input
-              aria-label="minimum count"
-              placeholder="min"
-              type="number"
-              value={group.minCount}
-              onChange={(event) => onUpdateGroup({ minCount: event.target.value })}
-            />
-            <input
-              aria-label="maximum count"
-              placeholder="max"
-              type="number"
-              value={group.maxCount}
-              onChange={(event) => onUpdateGroup({ maxCount: event.target.value })}
-            />
-          </div>
-        ) : null}
-        {isWeighted ? (
-          <div className="filter-inline-fields">
-            <input
-              aria-label="minimum weighted sum"
-              placeholder="sum min"
-              type="number"
-              value={group.minTotal}
-              onChange={(event) => onUpdateGroup({ minTotal: event.target.value })}
-            />
-            <input
-              aria-label="maximum weighted sum"
-              placeholder="sum max"
-              type="number"
-              value={group.maxTotal}
-              onChange={(event) => onUpdateGroup({ maxTotal: event.target.value })}
-            />
-          </div>
-        ) : null}
+          <span style={{ fontSize: "0.85rem", fontWeight: "600" }}>
+            Weighted Sum #{index + 1}
+          </span>
+        </div>
         <button
           aria-label="remove group"
           className="icon-button"
           type="button"
+          style={{ marginLeft: "auto" }}
           onClick={onRemoveGroup}
         >
           x
@@ -726,8 +677,7 @@ function FilterGroup({
       </div>
       <div className="filter-rule-list">
         {group.rows.map((row) => (
-          <FilterRule
-            groupOperator={group.operator}
+          <WeightedStatRow
             key={row.id}
             row={row}
             onRemove={() => onRemoveRule(row.id)}
@@ -742,57 +692,22 @@ function FilterGroup({
   );
 }
 
-function FilterRule({ groupOperator, row, onRemove, onUpdate }) {
-  const isStat = row.target === "stat";
-  const isWeighted = groupOperator === "weighted";
-  const ruleClassName = [
-    "filter-rule",
-    row.enabled ? "" : "disabled",
-    isStat ? "" : "field-rule",
-    isWeighted ? "weighted-rule" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
+function WeightedStatRow({ row, onRemove, onUpdate }) {
   return (
-    <div className={ruleClassName}>
-      <label className="filter-check">
-        <input
-          checked={row.enabled}
-          type="checkbox"
-          onChange={(event) => onUpdate({ enabled: event.target.checked })}
-        />
-      </label>
-      <select
-        value={row.target}
-        onChange={(event) => onUpdate({ target: event.target.value })}
-      >
-        {RULE_TARGETS.map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
-      {isStat ? (
-        <input
-          list="market-stat-names"
-          placeholder="stat name"
-          value={row.stat}
-          onChange={(event) => onUpdate({ stat: event.target.value })}
-        />
-      ) : null}
-      {!isWeighted ? (
-        <select
-          value={row.comparator}
-          onChange={(event) => onUpdate({ comparator: event.target.value })}
-        >
-          {COMPARATORS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      ) : null}
+    <div className="filter-rule weighted-rule">
+      <input
+        list="market-stat-names"
+        placeholder="stat name"
+        value={row.stat}
+        onChange={(event) => onUpdate({ stat: event.target.value })}
+      />
+      <input
+        aria-label="stat weight"
+        placeholder="weight"
+        type="number"
+        value={row.weight}
+        onChange={(event) => onUpdate({ weight: event.target.value })}
+      />
       <input
         aria-label="minimum value"
         placeholder="min"
@@ -807,15 +722,6 @@ function FilterRule({ groupOperator, row, onRemove, onUpdate }) {
         value={row.max}
         onChange={(event) => onUpdate({ max: event.target.value })}
       />
-      {isWeighted ? (
-        <input
-          aria-label="stat weight"
-          placeholder="weight"
-          type="number"
-          value={row.weight}
-          onChange={(event) => onUpdate({ weight: event.target.value })}
-        />
-      ) : null}
       <button
         aria-label="remove stat"
         className="icon-button"
@@ -833,8 +739,8 @@ function ListingCard({ active, item, meta, onSelect }) {
     .sort((a, b) => Number(b[1]) - Number(a[1]))
     .slice(0, 5);
   const weightedLabel = Number.isFinite(meta.weightedTotal)
-    ? `Weighted ${formatNumber(meta.weightedTotal)}`
-    : "No weighted group";
+    ? `Sum ${formatNumber(meta.weightedTotal)}`
+    : "No sum";
 
   return (
     <button
@@ -852,7 +758,6 @@ function ListingCard({ active, item, meta, onSelect }) {
           <span>{item.rarity ?? "Unknown"}</span>
           <span>{item.type ?? item.item_type ?? "Item"}</span>
           <span>{item.unidentified ? "Unidentified" : `${formatNumber(item.overall_roll)}%`}</span>
-          <span>{weightedLabel}</span>
         </div>
         <div className="listing-stats">
           {statEntries.length ? (
@@ -867,7 +772,7 @@ function ListingCard({ active, item, meta, onSelect }) {
         </div>
       </div>
       <div className="listing-side">
-        <span>{meta.matchedGroups}/{meta.activeGroups}</span>
+        <span className="weighted-sum-badge">{weightedLabel}</span>
         <small>{item.playerName ?? item.player_name ?? "seller"}</small>
       </div>
     </button>
@@ -1040,6 +945,23 @@ function buildListingParams(query) {
   return params;
 }
 
+function passesLocalPriceFilter(item, query) {
+  const min = parseOptionalNumber(query.priceMin);
+  const max = parseOptionalNumber(query.priceMax);
+
+  if (min === null && max === null) {
+    return true;
+  }
+
+  const price = Number(item.listing_price);
+
+  if (!Number.isFinite(price)) {
+    return false;
+  }
+
+  return passesRange(price, min, max);
+}
+
 function evaluateAllGroups(item, groups) {
   const activeGroups = groups.filter((group) => group.enabled);
   const results = activeGroups.map((group) => evaluateGroup(item, group));
@@ -1056,78 +978,26 @@ function evaluateAllGroups(item, groups) {
 }
 
 function evaluateGroup(item, group) {
-  const rows = group.rows.filter((row) => row.enabled);
+  const rows = group.rows.filter((row) => row.stat.trim());
 
   if (!rows.length) {
     return { passed: true, weightedTotal: Number.NaN };
   }
 
-  if (group.operator === "and") {
-    return {
-      passed: rows.every((row) => evaluateRule(item, row)),
-      weightedTotal: Number.NaN,
-    };
-  }
+  const weightedTotal = rows.reduce(
+    (total, row) => total + getWeightedContribution(item, row),
+    0,
+  );
 
-  if (group.operator === "or") {
-    return {
-      passed: rows.some((row) => evaluateRule(item, row)),
-      weightedTotal: Number.NaN,
-    };
-  }
-
-  if (group.operator === "not") {
-    return {
-      passed: rows.every((row) => !evaluateRule(item, row)),
-      weightedTotal: Number.NaN,
-    };
-  }
-
-  if (group.operator === "if") {
-    return {
-      passed: rows.every((row) => {
-        const value = getRuleValue(item, row);
-        return !hasValue(value) || evaluateRule(item, row);
-      }),
-      weightedTotal: Number.NaN,
-    };
-  }
-
-  if (group.operator === "count") {
-    const count = rows.filter((row) => evaluateRule(item, row)).length;
-    const min = parseOptionalNumber(group.minCount);
-    const max = parseOptionalNumber(group.maxCount);
-    return {
-      passed: passesRange(count, min, max),
-      weightedTotal: Number.NaN,
-    };
-  }
-
-  if (group.operator === "weighted") {
-    const weightedTotal = rows.reduce(
-      (total, row) => total + getWeightedContribution(item, row),
-      0,
-    );
-    const min = parseOptionalNumber(group.minTotal);
-    const max = parseOptionalNumber(group.maxTotal);
-    return {
-      passed: passesRange(weightedTotal, min, max),
-      weightedTotal,
-    };
-  }
-
-  return { passed: true, weightedTotal: Number.NaN };
+  return {
+    passed: rows.every((row) => evaluateWeightedRule(item, row)),
+    weightedTotal,
+  };
 }
 
-function evaluateRule(item, row) {
-  const value = getRuleValue(item, row);
+function evaluateWeightedRule(item, row) {
+  const value = getWeightedStatValue(item, row);
 
-  if (row.comparator === "exists") {
-    return hasValue(value);
-  }
-  if (row.comparator === "missing") {
-    return !hasValue(value);
-  }
   if (!hasValue(value)) {
     return false;
   }
@@ -1136,25 +1006,11 @@ function evaluateRule(item, row) {
   const min = parseOptionalNumber(row.min);
   const max = parseOptionalNumber(row.max);
 
-  if (!Number.isFinite(numericValue)) {
-    return false;
-  }
-
-  if (row.comparator === "gte") {
-    return min === null ? true : numericValue >= min;
-  }
-  if (row.comparator === "lte") {
-    return max === null ? true : numericValue <= max;
-  }
-  if (row.comparator === "eq") {
-    return min === null ? true : numericValue === min;
-  }
-
-  return passesRange(numericValue, min, max);
+  return Number.isFinite(numericValue) && passesRange(numericValue, min, max);
 }
 
 function getWeightedContribution(item, row) {
-  const value = getRuleValue(item, row);
+  const value = getWeightedStatValue(item, row);
 
   if (!hasValue(value)) {
     return 0;
@@ -1163,36 +1019,14 @@ function getWeightedContribution(item, row) {
   const numericValue = Number(value);
   const weight = parseOptionalNumber(row.weight) ?? 1;
 
-  if (!Number.isFinite(numericValue) || !passesRangeForWeighted(numericValue, row)) {
+  if (!Number.isFinite(numericValue)) {
     return 0;
   }
 
   return numericValue * weight;
 }
 
-function passesRangeForWeighted(value, row) {
-  const min = parseOptionalNumber(row.min);
-  const max = parseOptionalNumber(row.max);
-  return passesRange(value, min, max);
-}
-
-function getRuleValue(item, row) {
-  if (row.target === "overall_roll") {
-    return item.overall_roll;
-  }
-  if (row.target === "listing_price") {
-    return item.listing_price;
-  }
-  if (row.target === "amount") {
-    return item.amount;
-  }
-  if (row.target === "reroll_count") {
-    return item.reroll_count;
-  }
-  if (row.target === "tier") {
-    return item.tier;
-  }
-
+function getWeightedStatValue(item, row) {
   return findStatValue(item.stat_rolls, row.stat);
 }
 
@@ -1223,9 +1057,6 @@ function sortEvaluatedItems(rows, localSort) {
   }
   if (localSort === "weighted_desc") {
     sorted.sort((a, b) => safeScore(b.meta.weightedTotal) - safeScore(a.meta.weightedTotal));
-  }
-  if (localSort === "matched_desc") {
-    sorted.sort((a, b) => b.meta.matchedGroups - a.meta.matchedGroups);
   }
 
   return sorted;

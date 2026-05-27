@@ -948,6 +948,34 @@ p {
   gap: 10px;
 }
 
+.group-picker {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.group-type-option {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(116, 247, 212, 0.08);
+  color: var(--foreground);
+  padding: 11px 12px;
+  text-align: left;
+}
+
+.group-type-option:hover {
+  border-color: var(--line-strong);
+  background: rgba(116, 247, 212, 0.12);
+}
+
+.group-type-option span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .filter-group {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -962,7 +990,7 @@ p {
 
 .filter-group-head {
   display: grid;
-  grid-template-columns: auto minmax(116px, 0.9fr) minmax(120px, 1fr) 38px;
+  grid-template-columns: minmax(0, 1fr) 38px;
   gap: 8px;
   align-items: center;
   margin-bottom: 10px;
@@ -976,21 +1004,13 @@ p {
 
 .filter-rule {
   display: grid;
-  grid-template-columns: 22px repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(130px, 1.2fr) minmax(74px, 0.65fr) minmax(74px, 0.65fr) minmax(74px, 0.65fr) 38px;
   gap: 8px;
   align-items: center;
 }
 
-.filter-rule.field-rule,
-.filter-rule.weighted-rule,
-.filter-rule.weighted-rule.field-rule {
-  grid-template-columns: 22px repeat(3, minmax(0, 1fr));
-}
-
-.filter-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.filter-rule.weighted-rule {
+  grid-template-columns: minmax(130px, 1.2fr) minmax(74px, 0.65fr) minmax(74px, 0.65fr) minmax(74px, 0.65fr) 38px;
 }
 
 .filter-add-rule {
@@ -1129,6 +1149,17 @@ p {
 .listing-side span {
   color: var(--yellow);
   font-weight: 950;
+}
+
+.weighted-sum-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border: 1px solid rgba(255, 209, 102, 0.36);
+  border-radius: 8px;
+  background: rgba(255, 209, 102, 0.1);
+  padding: 0 9px;
+  white-space: nowrap;
 }
 
 .listing-side small {
@@ -1320,9 +1351,7 @@ p {
   .market-control-grid,
   .filter-group-head,
   .filter-rule,
-  .filter-rule.field-rule,
   .filter-rule.weighted-rule,
-  .filter-rule.weighted-rule.field-rule,
   .listing-card,
   .detail-filter-score,
   .price-stat-grid {
