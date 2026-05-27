@@ -282,6 +282,24 @@ function stateWith(values) {
 
 {
   const state = stateWith({
+    challenge: 24,
+    maxChallenges: 58,
+    boons: 2,
+    boonPotency: 420,
+    curses: 1,
+    completedMissions: ["opalOffering"],
+    offered: [
+      { id: "blue", vibrant: false },
+      { id: "purple", vibrant: false },
+      { id: "green", vibrant: false },
+    ],
+  });
+  const ranked = rankActions(state);
+  assert.equal(ranked[0].beaconId, "blue");
+}
+
+{
+  const state = stateWith({
     challenge: 1,
     offered: [
       { id: "orange", vibrant: false },
@@ -511,6 +529,30 @@ function stateWith(values) {
     ],
   });
   assert.equal(rankActions(state)[0].beaconId, "green");
+}
+
+{
+  const state = stateWith({
+    challenge: 26,
+    maxChallenges: 58,
+    boons: 2,
+    boonPotency: 500,
+    redDebt: {
+      noTimeChallenges: 6,
+      secondsLost: 900,
+    },
+    clock: {
+      running: false,
+      startedAt: null,
+      timerSeconds: 760,
+    },
+    offered: [
+      { id: "green", vibrant: false },
+      { id: "blue", vibrant: false },
+      { id: "purple", vibrant: false },
+    ],
+  });
+  assert.equal(rankActions(state)[0].beaconId, "blue");
 }
 
 {

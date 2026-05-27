@@ -95,8 +95,8 @@ export const DEFAULT_WEIGHTS = {
   rewardReroll: 145,
   sacrifice: 270,
   beaconReroll: 92,
-  boon: 48,
-  boonPotency: 0.36,
+  boon: 58,
+  boonPotency: 0.42,
   flyingChest: 34,
   missionSlot: 310,
   trialSlot: 360,
@@ -107,8 +107,8 @@ export const DEFAULT_WEIGHTS = {
   radianceCurse: -31,
   danger: -240,
   blockedCombo: -95,
-  redDebtSecond: -0.74,
-  redDebtChallenge: -52,
+  redDebtSecond: -0.46,
+  redDebtChallenge: -34,
 };
 
 export const BEACON_IDS = [
@@ -137,7 +137,7 @@ export const BEACONS = {
     baseWeight: 1,
     rarity: "Common",
     effect: "Choose 1 Boon from 4 choices at 100% potency.",
-    reason: "Boon sustain is central after Fruma; boosts increase Boon Potency, not boon count.",
+    reason: "Boon sustain is central after Fruma and builds the bank used to cash out Purple/Opal lines later.",
     extraNotes: "Base / Vibrant / Vibrant + Aqua potency is 100% / 200% / 600%.",
   },
   purple: {
@@ -199,7 +199,7 @@ export const BEACONS = {
     rarity: "Common",
     noConsecutive: true,
     effect: "+120s Time Bonus; mobs gain no buffs this challenge only.",
-    reason: "Repairs low timer states and becomes stronger after Red-heavy paths.",
+    reason: "Repairs low timer states; strongest after Red-heavy paths become urgent, not when the clock is already safe.",
     extraNotes: "Time is 120 / 240 / 720s. The no-buff duration is 1 / 2 / 3 challenges and is affected by Aqua, not standalone Vibrant.",
   },
   darkGrey: {

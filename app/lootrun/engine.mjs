@@ -1298,11 +1298,14 @@ export function scoreState(state) {
       : 1;
   const cursePenalty = state.curses * curseEffectiveness * weights.curse * (2 - profile.curseTolerance);
   const timePressure = getTimePressure(state, timer);
+  const redDebtUrgency = getRedDebtUrgency(state, timer);
+  const redDebtPenaltyScale = 0.18 + redDebtUrgency * 0.82;
   const activeCombo =
     (activeNames.has("equilibrium") && state.curses > 0 ? 110 : 0) +
     (activeNames.has("gourmand") && activeNames.has("optimism") ? 160 : 0) +
     (activeNames.has("materialism") && state.flyingChests > 0 ? 90 : 0) +
-    (activeNames.has("porphyrophobia") && state.boons > 0 ? 85 : 0);
+    (activeNames.has("porphyrophobia") && state.boons > 0 ? 85 : 0) +
+    getBoonBankComboValue(state, activeNames);
 
   return (
     state.pulls * weights.pull +
@@ -1320,19 +1323,69 @@ export function scoreState(state) {
     activeCombo +
     cursePenalty +
     state.radianceCurses * weights.radianceCurse +
-    state.redDebt.secondsLost * weights.redDebtSecond +
-    state.redDebt.noTimeChallenges * weights.redDebtChallenge +
+    (state.redDebt.secondsLost * weights.redDebtSecond +
+      state.redDebt.noTimeChallenges * weights.redDebtChallenge) *
+      redDebtPenaltyScale +
     timePressure * weights.danger * (2 - profile.riskTolerance)
   );
 }
 
 function getTimePressure(state, timer = getCurrentTimerSeconds(state)) {
   const remaining = Math.max(1, state.maxChallenges - state.challenge);
-  const expectedNeed = Math.min(720, remaining * 34 + state.redDebt.secondsLost * 0.65);
+  const redDebtUrgency = getRedDebtUrgency(state, timer);
+  const redDebtNeed = state.redDebt.secondsLost * (0.12 + redDebtUrgency * 0.48);
+  const expectedNeed = Math.min(720, remaining * 34 + redDebtNeed);
   if (timer >= expectedNeed) {
     return 0;
   }
   return clamp((expectedNeed - timer) / expectedNeed, 0, 1);
+}
+
+function getRedDebtUrgency(state, timer = getCurrentTimerSeconds(state)) {
+  const debtChallenges = Math.max(0, state.redDebt?.noTimeChallenges ?? 0);
+  if (debtChallenges <= 0) {
+    return 0;
+  }
+
+  const remaining = Math.max(1, state.maxChallenges - state.challenge);
+  const debtShare = clamp(debtChallenges / remaining, 0, 1);
+  const latePressure = clamp((9 - remaining) / 9, 0, 1);
+  const timerNeedWithoutPanic = Math.min(720, remaining * 34 + debtChallenges * 24);
+  const timerShortage = clamp(
+    (timerNeedWithoutPanic - timer) / Math.max(180, timerNeedWithoutPanic),
+    0,
+    1,
+  );
+  const redChainPressure = debtChallenges >= 8 ? 0.12 : 0;
+  const whiteSpentPressure = (state.useCounts?.white ?? 0) > 0 ? 0.08 : 0;
+
+  return clamp(
+    timerShortage * 0.58 +
+      debtShare * 0.18 +
+      latePressure * 0.16 +
+      redChainPressure +
+      whiteSpentPressure,
+    0,
+    1,
+  );
+}
+
+function getBoonBankComboValue(state, activeNames) {
+  const comboNeedsBoonBank = [
+    "opalOffering",
+    "porphyrophobia",
+    "equilibrium",
+    "orphionsGrace",
+    "dyingLight",
+  ].some((id) => activeNames.has(id));
+
+  const softCap = comboNeedsBoonBank ? 9 : state.challenge >= 12 ? 6 : 4;
+  const countedBoons = Math.min(state.boons, softCap);
+  const countedPotency = Math.min(state.boonPotency, comboNeedsBoonBank ? 2600 : 1500);
+  const boonValue = comboNeedsBoonBank ? 34 : state.challenge >= 12 ? 18 : 10;
+  const potencyValue = comboNeedsBoonBank ? 0.065 : state.challenge >= 12 ? 0.028 : 0.012;
+
+  return countedBoons * boonValue + countedPotency * potencyValue;
 }
 
 function scoreReroll(state, projectedState) {
@@ -1386,23 +1439,49 @@ function getBeaconHeuristicBonus(state, action) {
   const setupNeedsChoices = early && choiceCount < 5;
   const setupNeedsRainbow = early && !hasRainbowSetup;
   const stackedPremium = multiplier >= 4;
+  const redDebtUrgency = getRedDebtUrgency(state, timer);
 
   let score = 0;
   switch (action.beaconId) {
     case "blue":
-      score +=
-        150 +
-        34 * multiplier +
-        Math.max(0, 5 - state.boons) * 54 +
-        Math.max(0, state.curses - state.boons) * 34 +
-        (early ? 45 : 0);
-      if (setupNeedsChoices || setupNeedsRainbow) score -= 165;
+      {
+        const boonTarget = activeNames.has("opalOffering")
+          ? 9
+          : activeNames.has("equilibrium") || activeNames.has("porphyrophobia")
+            ? 8
+            : state.challenge >= 12
+              ? 7
+              : 4;
+        const potencyTarget = activeNames.has("opalOffering")
+          ? 1800
+          : activeNames.has("equilibrium") || activeNames.has("orphionsGrace")
+            ? 1400
+            : state.challenge >= 12
+              ? 950
+              : 520;
+        const missingBoonValue =
+          Math.max(0, boonTarget - state.boons) * (early && !hasRainbowSetup ? 46 : 72);
+        const potencyBankValue = Math.min(
+          240,
+          Math.max(0, potencyTarget - state.boonPotency) *
+            (stackedPremium ? 0.13 : 0.075),
+        );
+
+        score +=
+          145 +
+          40 * multiplier +
+          missingBoonValue +
+          potencyBankValue +
+          (early ? 35 : 0);
+      }
+      if (state.curses > state.boons) score += Math.max(0, state.curses - state.boons) * 38;
+      if (setupNeedsChoices || setupNeedsRainbow) score -= 185;
       if (stackedPremium) score += 280;
-      if (activeNames.has("orphionsGrace")) score += 44;
-      if (activeNames.has("opalOffering")) score += 76;
-      if (state.boonPotency < state.boons * 180) score += 60;
+      if (activeNames.has("orphionsGrace")) score += 70;
+      if (activeNames.has("opalOffering")) score += 145;
+      if (state.boonPotency < state.boons * 220) score += 75;
       if (activeNames.has("equilibrium") && (state.effects.nextBoonPotencyBonus ?? 0) > 0) {
-        score += 135;
+        score += 170;
       }
       break;
     case "purple":
@@ -1440,11 +1519,15 @@ function getBeaconHeuristicBonus(state, action) {
       break;
     case "green":
       score +=
-        95 * multiplier +
-        (timer < 360 ? 180 : 0) +
-        state.curses * 10 +
-        state.redDebt.noTimeChallenges * 64 +
-        state.redDebt.secondsLost * 0.7;
+        72 * multiplier +
+        (timer < 180 ? 285 : timer < 300 ? 180 : timer < 420 ? 62 : 0) +
+        state.curses * 6 +
+        (state.redDebt.noTimeChallenges * 46 + state.redDebt.secondsLost * 0.32) *
+          redDebtUrgency;
+      if (remaining <= 6) score += 82;
+      if (timer > 540 && redDebtUrgency < 0.35) score -= 135;
+      if (timer >= MAX_TIMER_SECONDS && !activeNames.has("backupBeat")) score -= 95;
+      if (activeNames.has("backupBeat") && multiplier >= 2) score += 70;
       if (activeNames.has("gamblingBeast")) {
         score += 230 + (state.effects.aquaBoost > 0 || effectiveVibrant ? 150 : 0);
       }
@@ -1469,7 +1552,7 @@ function getBeaconHeuristicBonus(state, action) {
     case "red":
       score += 150 + (effectiveVibrant ? 85 : 0) + (stackedPremium ? 260 : 0);
       if (remaining <= 4) score += 320;
-      if (early && !hasRainbowSetup && state.maxChallenges < 20) score += 540;
+      if (early && !hasRainbowSetup && state.maxChallenges < 20) score += 70;
       score += timer > 480 ? 85 : -210;
       score -= state.redDebt.secondsLost * 0.55;
       break;
@@ -1585,6 +1668,9 @@ function getBeaconReasons(state, action, projectedState) {
 
   if (action.beaconId === "blue" && multiplier > 1) {
     reasons.push(`Blue still grants 1 boon; Aqua/Vibrant raises potency to x${round(multiplier, 1)}.`);
+    reasons.push("Boon bank is valued as setup for later Purple or Opal farming.");
+  } else if (action.beaconId === "blue") {
+    reasons.push("Boon bank is valued as setup for later Purple or Opal farming.");
   } else if (action.beaconId === "crimson" && multiplier > 1) {
     reasons.push(`Boost increases Crimson trial choices, capped at 4.`);
   } else if (multiplier > 1) {
@@ -1604,6 +1690,13 @@ function getBeaconReasons(state, action, projectedState) {
   }
   if (action.beaconId === "green" && state.redDebt.noTimeChallenges > 0) {
     reasons.push(`Green pays down Red no-time-bonus debt: ${state.redDebt.noTimeChallenges} challenges / ${state.redDebt.secondsLost}s.`);
+  }
+  if (
+    action.beaconId === "green" &&
+    getCurrentTimerSeconds(state) > 540 &&
+    getRedDebtUrgency(state) < 0.35
+  ) {
+    reasons.push("Timer is still safe, so Green is mostly a later repair pick.");
   }
   if (action.beaconId === "red") {
     reasons.push("Red adds challenge ceiling but increases no-time-bonus debt.");
